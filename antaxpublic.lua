@@ -27,7 +27,7 @@ local Library = loadstring(game:HttpGet("https://raw.githubusercontent.com/Purpi
 -- // Variables
 -- // Init
 local Window = Library:New({
-	Name = "Antax Private - " .. RigMode,
+	Name = "Antax Public - " .. RigMode,
 	Accent = Color3.fromRGB(250, 250, 250)
 })
 --
