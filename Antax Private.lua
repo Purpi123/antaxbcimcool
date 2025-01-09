@@ -23,7 +23,7 @@ print("Rig Mode:", RigMode)
 
 
 -- // Tables
-local Library = loadstring(game:HttpGet("https://raw.githubusercontent.com/Purpi123/antaxbcimcool/refs/heads/main/source.lua"))() -- Could Also Save It In Your Workspace And Do loadfile("Library.lua")()
+local Library = loadstring(game:HttpGet("https://raw.githubusercontent.com/matas3535/PoopLibrary/main/Library.lua") -- Could Also Save It In Your Workspace And Do loadfile("Library.lua")()
 -- // Variables
 -- // Init
 local Window = Library:New({
