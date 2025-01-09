@@ -1,4 +1,4 @@
-local player = game.Players.LocalPlayer
+﻿local player = game.Players.LocalPlayer
 local character = player.Character or player.CharacterAdded:Wait()
 
 local RigMode
