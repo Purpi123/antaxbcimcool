@@ -1628,6 +1628,17 @@ game.Players.PlayerAdded:Connect(function(player)
     end
 end)
 
+-- Toggle för Others Skeleton ESP
+Skeleton_ESP:Toggle({
+    Name = "Others", -- Toggle för Others
+    Default = false,
+    Pointer = "OthersSkeleton_Toggle",
+    Callback = function(state)
+        OthersESPEnabled = state  -- Uppdatera variabeln när togglen ändras
+        updateSkeletons()  -- Uppdatera skelett när ESP aktiveras eller inaktiveras
+    end
+})
+
 -- Toggle för Self Skeleton ESP
 Skeleton_ESP:Toggle({
     Name = "Self", -- Toggle för Self
@@ -1639,16 +1650,7 @@ Skeleton_ESP:Toggle({
     end
 })
 
--- Toggle för Others Skeleton ESP
-Skeleton_ESP:Toggle({
-    Name = "Others", -- Toggle för Others
-    Default = false,
-    Pointer = "OthersSkeleton_Toggle",
-    Callback = function(state)
-        OthersESPEnabled = state  -- Uppdatera variabeln när togglen ändras
-        updateSkeletons()  -- Uppdatera skelett när ESP aktiveras eller inaktiveras
-    end
-})
+
 
 -- Färgväljare för Skeleton Color
 Skeleton_ESP:Colorpicker({
