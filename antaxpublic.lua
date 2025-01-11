@@ -1,4 +1,4 @@
-﻿local player = game.Players.LocalPlayer
+local player = game.Players.LocalPlayer
 local character = player.Character or player.CharacterAdded:Wait()
 
 local RigMode
@@ -34,13 +34,16 @@ local Window = Library:New({
 local LocalPlayer = Window:Page({
 	Name = "Local"
 })
+
+local PlayersTab = Window:Page({
+	Name = "Players"
+})
+
 local Visuals = Window:Page({
 	Name = "Visuals"
 })
 
-local ClientSided = Window:Page({
-	Name = "Client"
-})
+
 local MenuSettings = Window:Page({
 	Name = "Antax"
 })  -- New Page for Menu Settings
@@ -55,6 +58,22 @@ local Local_Walking, Local_Jumping, Local_Grav, Local_Health = LocalPlayer:Multi
 	Side = "Left",
 	Size = 170
 })
+
+local Box_ESP, Chams_ESP, Skeleton_ESP, Object_ESP, Name_ESP, Tracer_ESP = Visuals:MultiSection({
+	Sections = {
+		"Box",
+		"Chams",
+		"Skeleton",
+		"Object",
+		"Names",
+		"Tracers"
+	},
+	Side = "Left",
+	Size = 200
+})
+
+
+
 
 local Local_Body, Local_Movement, Local_Powers, Local_Events = LocalPlayer:MultiSection({
 	Sections = {
@@ -1008,11 +1027,23 @@ Local_Powers:Colorpicker({
 
 
 
+
+
+
+
 Local_Events:Button({
 	Name = "Sit",
 	Pointer = "SitBTN",
 	Callback = function()
 		player.Character.Humanoid.Sit = true
+	end
+})
+
+Local_Events:Button({
+	Name = "Un Sit",
+	Pointer = "SitBTN",
+	Callback = function()
+		player.Character.Humanoid.Sit = false
 	end
 })
 
@@ -1100,6 +1131,50 @@ Local_Game:Toggle({
 })
 
 
+local seatConnections = {}
+
+Local_Game:Toggle({
+    Name = "Disable Sitting",
+    Default = false,
+    Pointer = "DisableSittingToggle",
+    Callback = function(state)
+        if state then
+            -- Aktivera: Förhindra sittning
+            for _, seat in ipairs(workspace:GetDescendants()) do
+                if seat:IsA("Seat") or seat:IsA("VehicleSeat") then
+                    seat.Disabled = true -- Förhindrar sittning
+                end
+            end
+            
+            -- Lyssna efter nya sittplatser och disabla dem
+            local connection = workspace.DescendantAdded:Connect(function(descendant)
+                if descendant:IsA("Seat") or descendant:IsA("VehicleSeat") then
+                    descendant.Disabled = true
+                end
+            end)
+            table.insert(seatConnections, connection)
+        else
+            -- Inaktivera: Tillåt sittning
+            for _, seat in ipairs(workspace:GetDescendants()) do
+                if seat:IsA("Seat") or seat:IsA("VehicleSeat") then
+                    seat.Disabled = false -- Återställ sittfunktion
+                end
+            end
+            
+            -- Koppla bort lyssnare för nya sittplatser
+            for _, connection in ipairs(seatConnections) do
+                connection:Disconnect()
+            end
+            seatConnections = {}
+        end
+    end
+})
+
+
+
+
+
+
 
 local StarterGui = game:GetService("StarterGui")
 
@@ -1168,8 +1243,460 @@ Local_Network:Button({
 
 
 
+local Settings = {
+    Box_Color = Color3.fromRGB(250, 250, 255), -- Standard Box Color
+    Box_Thickness = 1, -- Standard Box Thickness
+}
+
+local OthersESPEnabled = false -- Toggle för andra spelare
+local SelfESPEnabled = false -- Toggle för LocalPlayer
+local HealthbarESPEnabled = false -- Toggle för Healthbar ESP
+
+local ESPObjects = {} -- Lista för att lagra ESP-objekt
+
+-- Lokala tjänster
+local player = game:GetService("Players").LocalPlayer
+local camera = game:GetService("Workspace").CurrentCamera
+
+-- Funktioner för att skapa ESP-element
+local function NewQuad(thickness, color)
+    local quad = Drawing.new("Quad")
+    quad.Visible = false
+    quad.Color = color
+    quad.Filled = false
+    quad.Thickness = thickness
+    quad.Transparency = 1
+    return quad
+end
+
+local function NewLine(thickness, color)
+    local line = Drawing.new("Line")
+    line.Visible = false
+    line.Color = color
+    line.Thickness = thickness
+    line.Transparency = 1
+    return line
+end
+
+-- Funktion för att toggla synlighet
+local function Visibility(state, lib)
+    for _, obj in pairs(lib) do
+        obj.Visible = state
+    end
+end
+
+-- Funktion för att skapa ESP
+local function CreateESP(plr)
+    local library = {
+        -- Box (main och border)
+        blackbox = NewQuad(Settings.Box_Thickness * 2, Color3.fromRGB(0, 0, 0)),
+        box = NewQuad(Settings.Box_Thickness, Settings.Box_Color),
+
+        -- Healthbar (green och border)
+        healthbar = NewLine(2, Color3.fromRGB(0, 0, 0)),
+        greenhealth = NewLine(1.5, Color3.fromRGB(0, 255, 0)),
+    }
+
+    ESPObjects[plr] = library -- Lagra ESP-data för spelaren
+
+    local function Update()
+        local connection
+        connection = game:GetService("RunService").RenderStepped:Connect(function()
+            if plr.Character and plr.Character:FindFirstChild("Humanoid") and plr.Character:FindFirstChild("HumanoidRootPart") then
+                local HumPos, OnScreen = camera:WorldToViewportPoint(plr.Character.HumanoidRootPart.Position)
+                if OnScreen then
+                    local head = camera:WorldToViewportPoint(plr.Character.Head.Position)
+                    local DistanceY = math.clamp((Vector2.new(head.X, head.Y) - Vector2.new(HumPos.X, HumPos.Y)).magnitude, 2, math.huge)
+
+                    -- Uppdatera boxens storlek
+                    local function UpdateBox(item)
+                        item.PointA = Vector2.new(HumPos.X + DistanceY, HumPos.Y - DistanceY * 2)
+                        item.PointB = Vector2.new(HumPos.X - DistanceY, HumPos.Y - DistanceY * 2)
+                        item.PointC = Vector2.new(HumPos.X - DistanceY, HumPos.Y + DistanceY * 2)
+                        item.PointD = Vector2.new(HumPos.X + DistanceY, HumPos.Y + DistanceY * 2)
+                    end
+                    UpdateBox(library.box)
+                    UpdateBox(library.blackbox)
+
+                    -- Uppdatera hälsobaren
+                    if HealthbarESPEnabled then
+                        local d = (Vector2.new(HumPos.X - DistanceY, HumPos.Y - DistanceY * 2) - Vector2.new(HumPos.X - DistanceY, HumPos.Y + DistanceY * 2)).magnitude
+                        local healthoffset = plr.Character.Humanoid.Health / plr.Character.Humanoid.MaxHealth * d
+
+                        library.greenhealth.From = Vector2.new(HumPos.X - DistanceY - 4, HumPos.Y + DistanceY * 2)
+                        library.greenhealth.To = Vector2.new(HumPos.X - DistanceY - 4, HumPos.Y + DistanceY * 2 - healthoffset)
+
+                        library.healthbar.From = Vector2.new(HumPos.X - DistanceY - 4, HumPos.Y + DistanceY * 2)
+                        library.healthbar.To = Vector2.new(HumPos.X - DistanceY - 4, HumPos.Y - DistanceY * 2)
+                    else
+                        Visibility(false, {library.greenhealth, library.healthbar})
+                    end
+
+                    -- Visa ESP baserat på "Self" och "Others" toggles
+                    if plr == player then
+                        Visibility(SelfESPEnabled, {library.box, library.blackbox})
+                        Visibility(SelfESPEnabled and HealthbarESPEnabled, {library.greenhealth, library.healthbar})
+                    else
+                        Visibility(OthersESPEnabled, {library.box, library.blackbox})
+                        Visibility(OthersESPEnabled and HealthbarESPEnabled, {library.greenhealth, library.healthbar})
+                    end
+                else
+                    Visibility(false, {library.box, library.blackbox, library.greenhealth, library.healthbar})
+                end
+            else
+                Visibility(false, {library.box, library.blackbox, library.greenhealth, library.healthbar})
+                if not game.Players:FindFirstChild(plr.Name) then
+                    connection:Disconnect()
+                end
+            end
+        end)
+    end
+
+    coroutine.wrap(Update)()
+end
+
+-- Skapa ESP för alla spelare
+for _, v in pairs(game:GetService("Players"):GetPlayers()) do
+    coroutine.wrap(CreateESP)(v)
+end
+
+-- Lyssna efter nya spelare
+game.Players.PlayerAdded:Connect(function(newPlayer)
+    coroutine.wrap(CreateESP)(newPlayer)
+end)
+
+-- Uppdatera ESP-inställningar
+local function UpdateESPSettings()
+    for _, library in pairs(ESPObjects) do
+        library.box.Color = Settings.Box_Color
+        library.box.Thickness = Settings.Box_Thickness
+
+        library.blackbox.Thickness = Settings.Box_Thickness * 2
+    end
+end
+
+-- ESP-kontroller
+Box_ESP:Toggle({
+    Name = "Others",
+    Default = false,
+    Pointer = "OthersESP_Toggle",
+    Callback = function(state)
+        OthersESPEnabled = state
+    end
+})
+
+Box_ESP:Toggle({
+    Name = "Self",
+    Default = false,
+    Pointer = "SelfESP_Toggle",
+    Callback = function(state)
+        SelfESPEnabled = state
+    end
+})
+
+Box_ESP:Toggle({
+    Name = "Healthbar ESP",
+    Default = false,
+    Pointer = "Healthbar_Toggle",
+    Callback = function(state)
+        HealthbarESPEnabled = state
+    end
+})
+
+Box_ESP:Colorpicker({
+    Name = "Box Color",
+    Default = Settings.Box_Color,
+    Pointer = "BoxColor",
+    Callback = function(value)
+        Settings.Box_Color = value
+        UpdateESPSettings()
+    end
+})
+
+Box_ESP:Slider({
+    Name = "Box Thickness",
+    Default = Settings.Box_Thickness,
+    Min = 0.1,
+    Max = 5,
+    Pointer = "BoxThickness_Slider",
+    Callback = function(value)
+        Settings.Box_Thickness = value
+        UpdateESPSettings()
+    end
+})
 
 
+local espColorChamsSelf = Color3.new(255, 255, 255)  -- Default color for Self
+local espColorChamsOthers = Color3.new(255, 255, 255) -- Default color for Others
+local chamsEnabledSelf = false -- Toggle for Self
+local chamsEnabledOthers = false -- Toggle for Others
+
+-- Funktion för att skapa Chams-ESP
+local function createChams(character, color)
+    if character:FindFirstChild("Head") then
+        if not character:FindFirstChild("ESPHighlight") then
+            local highlight = Instance.new("Highlight")
+            highlight.Parent = character
+            highlight.Name = "ESPHighlight"
+            highlight.Adornee = character
+            highlight.FillColor = color
+            highlight.OutlineColor = color
+        end
+    end
+end
+
+-- Funktion för att ta bort Chams-ESP
+local function removeChams(character)
+    if character:FindFirstChild("ESPHighlight") then
+        character.ESPHighlight:Destroy()
+    end
+end
+
+-- Funktion för att applicera Chams till alla spelare
+local function applyChamsToAllPlayers()
+    for _, player in ipairs(game.Players:GetPlayers()) do
+        if player.Character then
+            -- Applicera Chams baserat på Self eller Others toggle
+            if player == game.Players.LocalPlayer then
+                if chamsEnabledSelf then
+                    createChams(player.Character, espColorChamsSelf)
+                end
+            else
+                if chamsEnabledOthers then
+                    createChams(player.Character, espColorChamsOthers)
+                end
+            end
+        end
+        
+        -- När en ny spelare går med (CharacterAdded)
+        player.CharacterAdded:Connect(function(character)
+            if player == game.Players.LocalPlayer then
+                if chamsEnabledSelf then
+                    createChams(character, espColorChamsSelf)
+                end
+            else
+                if chamsEnabledOthers then
+                    createChams(character, espColorChamsOthers)
+                end
+            end
+        end)
+
+        -- När en spelare dör (CharacterRemoving)
+        player.CharacterRemoving:Connect(function(character)
+            removeChams(character)
+        end)
+    end
+end
+
+-- Funktion för att ta bort Chams från alla spelare
+local function removeChamsFromAllPlayers()
+    for _, player in ipairs(game.Players:GetPlayers()) do
+        if player.Character then
+            removeChams(player.Character)
+        end
+    end
+end
+
+-- Uppdaterad loop som kontinuerligt applicerar Chams när det är aktiverat
+game:GetService("RunService").Heartbeat:Connect(function()
+    if chamsEnabledSelf or chamsEnabledOthers then
+        applyChamsToAllPlayers()
+    else
+        removeChamsFromAllPlayers()
+    end
+end)
+
+-- Chams-ESP kontroller i din nya menystruktur
+
+
+
+Chams_ESP:Toggle({
+    Name = "Others", -- Toggle för Others
+    Default = false,
+    Pointer = "OthersChams_Toggle",
+    Callback = function(state)
+        chamsEnabledOthers = state
+        if chamsEnabledOthers then
+            applyChamsToAllPlayers() -- Applicera Chams på andra spelare
+        else
+            removeChamsFromAllPlayers() -- Ta bort Chams från andra spelare
+        end
+    end
+})
+
+:Colorpicker({
+    Name = "Others Chams Color", -- Färg för Others Chams
+    Default = Color3.new(255, 0, 170), -- Röd som standard
+    Pointer = "OthersChamsColor_Picker",
+    Callback = function(color)
+        espColorChamsOthers = color
+        -- Uppdatera färg för Others Chams om det är aktiverat
+        if chamsEnabledOthers then
+            for _, player in ipairs(game.Players:GetPlayers()) do
+                if player.Character then
+                    removeChams(player.Character)
+                    createChams(player.Character, espColorChamsOthers)
+                end
+            end
+        end
+    end
+})
+
+Chams_ESP:Toggle({
+    Name = "Self", -- Toggle för Self
+    Default = false,
+    Pointer = "SelfChams_Toggle",
+    Callback = function(state)
+        chamsEnabledSelf = state
+        if chamsEnabledSelf then
+            applyChamsToAllPlayers() -- Applicera Chams på din egen spelare
+        else
+            removeChamsFromAllPlayers() -- Ta bort Chams från din egen spelare
+        end
+    end
+})
+:Colorpicker({
+    Name = "Self Chams Color", -- Färg för Self Chams
+    Default = Color3.new(100, 0, 170), -- Lila som standard
+    Pointer = "SelfChamsColor_Picker",
+    Callback = function(color)
+        espColorChamsSelf = color
+        -- Uppdatera färg för Self Chams om det är aktiverat
+        if chamsEnabledSelf then
+            for _, player in ipairs(game.Players:GetPlayers()) do
+                if player == game.Players.LocalPlayer and player.Character then
+                    removeChams(player.Character)
+                    createChams(player.Character, espColorChamsSelf)
+                end
+            end
+        end
+    end
+})
+
+
+
+local SkeletonLibrary = loadstring(game:HttpGet("https://raw.githubusercontent.com/Blissful4992/ESPs/main/UniversalSkeleton.lua"))()
+
+local Skeletons = {}
+local SelfESPEnabled = false  -- Variabel för om Self ESP är aktiverat
+local OthersESPEnabled = false  -- Variabel för om Others ESP är aktiverat
+
+-- Färg för skelettet (standard: lila)
+local SkeletonColor = Color3.fromRGB(130, 0, 255)
+
+-- Default värden för Thickness och Transparency
+local SkeletonThickness = 1
+local SkeletonTransparency = 0.5
+
+-- Funktion för att skapa skelett ESP för en spelare
+local function createSkeletonForPlayer(player)
+    local skeleton = SkeletonLibrary:NewSkeleton(player, true)
+    skeleton.Color = SkeletonColor  -- Sätt den nya färgen på skelettet
+    skeleton.Thickness = SkeletonThickness  -- Sätt Thickness
+    skeleton.Alpha = SkeletonTransparency  -- Sätt Transparency
+    table.insert(Skeletons, skeleton)
+end
+
+-- Funktion för att uppdatera skelett baserat på togglarna
+local function updateSkeletons()
+    -- Ta bort alla befintliga skelett
+    for _, skeleton in next, Skeletons do
+        skeleton:Remove()
+    end
+    Skeletons = {}
+
+    -- Om SelfESP är aktiverat, skapa skelett för den egna spelaren
+    if SelfESPEnabled then
+        createSkeletonForPlayer(game.Players.LocalPlayer)
+    end
+
+    -- Om OthersESP är aktiverat, skapa skelett för andra spelare
+    if OthersESPEnabled then
+        for _, player in next, game.Players:GetChildren() do
+            if player ~= game.Players.LocalPlayer then
+                createSkeletonForPlayer(player)
+            end
+        end
+    end
+end
+
+-- Lägg till en spelare och deras skelett när de går med i spelet
+game.Players.PlayerAdded:Connect(function(player)
+    -- Om OthersESP är aktiverat, skapa skelett för den nya spelaren
+    if OthersESPEnabled and player ~= game.Players.LocalPlayer then
+        createSkeletonForPlayer(player)
+    end
+end)
+
+-- Toggle för Self Skeleton ESP
+Skeleton_ESP:Toggle({
+    Name = "Self", -- Toggle för Self
+    Default = false,
+    Pointer = "SelfSkeleton_Toggle",
+    Callback = function(state)
+        SelfESPEnabled = state  -- Uppdatera variabeln när togglen ändras
+        updateSkeletons()  -- Uppdatera skelett när ESP aktiveras eller inaktiveras
+    end
+})
+
+-- Toggle för Others Skeleton ESP
+Skeleton_ESP:Toggle({
+    Name = "Others", -- Toggle för Others
+    Default = false,
+    Pointer = "OthersSkeleton_Toggle",
+    Callback = function(state)
+        OthersESPEnabled = state  -- Uppdatera variabeln när togglen ändras
+        updateSkeletons()  -- Uppdatera skelett när ESP aktiveras eller inaktiveras
+    end
+})
+
+-- Färgväljare för Skeleton Color
+Skeleton_ESP:Colorpicker({
+    Name = "Skeleton Color", -- Välj färg för skelett
+    Default = SkeletonColor,
+    Pointer = "SkeletonColor_Picker",
+    Callback = function(color)
+        SkeletonColor = color  -- Uppdatera SkeletonColor när användaren väljer en ny färg
+        -- Uppdatera alla skelett med den nya färgen
+        for _, skeleton in next, Skeletons do
+            skeleton.Color = SkeletonColor  -- Ändra färgen för varje skelett
+        end
+    end
+})
+
+-- Slider för att justera Skeleton Thickness
+Skeleton_ESP:Slider({
+    Name = "Skeleton Thickness", -- Justera tjockleken på skelettet
+    Default = SkeletonThickness,
+    Min = 0.1,
+    Max = 0.1,
+    Rounding = 1,
+    Pointer = "SkeletonThickness_Slider",
+    Callback = function(value)
+        SkeletonThickness = value  -- Uppdatera Thickness när användaren ändrar slider
+        -- Uppdatera alla skelett med den nya tjockleken
+        for _, skeleton in next, Skeletons do
+            skeleton.Thickness = SkeletonThickness  -- Ändra tjockleken på varje skelett
+        end
+    end
+})
+
+-- Slider för att justera Skeleton Transparency
+Skeleton_ESP:Slider({
+    Name = "Skeleton Transparency", -- Justera transparensen på skelettet
+    Default = SkeletonTransparency,
+    Min = 0,
+    Max = 1,
+    Rounding = 0.1,
+    Pointer = "SkeletonTransparency_Slider",
+    Callback = function(value)
+        SkeletonTransparency = value  -- Uppdatera Transparency när användaren ändrar slider
+        -- Uppdatera alla skelett med den nya transparensen
+        for _, skeleton in next, Skeletons do
+            skeleton.Alpha = SkeletonTransparency  -- Ändra transparensen på varje skelett
+        end
+    end
+})
 
 
 
@@ -1221,6 +1748,81 @@ SettingsMenu:Keybind({
 		print("New keybind set to: " .. toggleKey.Name)
 	end
 })
+
+
+
+local pigvicval = ""
+local selectedobj = ""
+
+-- Lyssnar efter chat-meddelanden från den lokala spelaren
+game.Players.LocalPlayer.Chatted:Connect(function(message)
+    -- Kontrollera om meddelandet börjar med "!plr "
+    if message:lower():sub(1, 5) == "!plr " then
+        -- Ta bort "!plr " från meddelandet och få kvar delnamnet
+        local partialName = message:sub(6):lower()
+
+        -- Vi håller koll på om vi redan har skickat en notis
+        local foundPlayer = false
+
+        -- Loopar genom alla spelare för att hitta en matchning
+        for _, player in pairs(game.Players:GetPlayers()) do
+            -- Kontrollera om spelarens namn innehåller delnamnet
+            if player.Name:lower():find(partialName) then
+                -- Kontrollera om vi redan har funnit en spelare för att undvika dubbla notiser
+                if not foundPlayer then
+                    -- Få spelarens avatarbild (profile picture URL)
+                    local avatarUrl = "https://www.roblox.com/headshot-thumbnail/image?userId=" .. player.UserId .. "&width=420&height=420&format=png"
+
+                    -- Skicka en notification med spelarens namn och avatarbild
+                    game:GetService("StarterGui"):SetCore("SendNotification",{
+                        Title = "Player Found!", -- Required
+                        Text = player.Name, -- Required
+                        Icon = avatarUrl -- Optional, använd avatarbilden
+                    })
+                
+                    pigvicval = player.Name
+
+                    -- Markera att vi har skickat en notis
+                    foundPlayer = true
+                end
+                -- Om en spelare har hittats, stoppa vidare sökning
+                break
+            end
+        end
+
+        -- Om ingen spelare hittades med det delnamnet
+        if not foundPlayer then
+            game:GetService("StarterGui"):SetCore("SendNotification",{
+                        Title = "No player found", -- Required
+                        Text = "We are sorry, try again", -- Required
+                        
+                    })
+        end
+    end
+end)
+
+
+game.Players.LocalPlayer.Chatted:Connect(function(message)
+    -- Kontrollera om meddelandet börjar med "!plr "
+    if message:lower():sub(1, 5) == "!obj " then
+        -- Ta bort "!plr " från meddelandet och få kvar delnamnet
+        local partialName = message:sub(6):lower()
+
+        
+                    selectedobj = partialName
+
+                  
+            game:GetService("StarterGui"):SetCore("SendNotification",{
+                        Title = "Object Selected", -- Required
+                        Text = partialName, -- Required
+                        
+                    })
+        
+    end
+end)
+
+
+
 
 
 
