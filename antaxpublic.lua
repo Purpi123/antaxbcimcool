@@ -1669,8 +1669,8 @@ Skeleton_ESP:Slider({
     Name = "Skeleton Thickness", -- Justera tjockleken på skelettet
     Default = SkeletonThickness,
     Min = 0.1,
-    Max = 0.1,
-    Rounding = 1,
+    Max = 5,
+    Rounding = 0.1,
     Pointer = "SkeletonThickness_Slider",
     Callback = function(value)
         SkeletonThickness = value  -- Uppdatera Thickness när användaren ändrar slider
